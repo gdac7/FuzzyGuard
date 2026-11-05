@@ -8,6 +8,13 @@ from typing import Tuple
 
 start_nltk()
 
+AFFECTIVE_NOUNS = {
+    "happy": "happiness.n.02",
+    "angry": "anger.n.01",
+    "sad": "sadness.n.01",
+    "afraid": "fear.n.01",
+}
+
 class PreProcessor:
     def __init__(self):
         self.__lemmatizer = WordNetLemmatizer()
@@ -20,7 +27,7 @@ class PreProcessor:
             tags = self.__pos_tagging(tokens)
             filtered = self.__stop_words(tags)
             lemmas = self.__lemmatization(filtered)
-            sentences.append(lemmas)
+            sentences.append(self.__select_synsets(lemmas))
 
         return sentences
         
@@ -68,6 +75,47 @@ class PreProcessor:
             lemmas.append((lemma, tag))
 
         return lemmas
+    
+    def __select_noun_synset(self, noun: str, other_nouns: list[str]):
+        candidates = wordnet.synsets(noun, pos=wordnet.NOUN)
+        if not candidates:
+            return None
+        if not other_nouns:
+            return candidates[0]
+
+        def score(candidate):
+            total = 0.0
+            for other in other_nouns:
+                other_synsets = wordnet.synsets(other, pos=wordnet.NOUN)
+                total += max(
+                    (candidate.wup_similarity(s) or 0.0 for s in other_synsets),
+                    default=0.0,
+                )
+            return total
+
+        return max(candidates, key=score)
+    
+    def __select_synsets(self, lemmas: list[Tuple[str, str]]):
+        nouns = [lemma for lemma, tag in lemmas if tag.startswith("N")]
+        result = []
+
+        for position, (lemma, tag) in enumerate(lemmas):
+            if tag.startswith("N"):
+                noun_index = sum(
+                    1 for previous, previous_tag in lemmas[:position]
+                    if previous_tag.startswith("N")
+                )
+                other_nouns = nouns[:noun_index] + nouns[noun_index + 1:]
+                synset = self.__select_noun_synset(lemma, other_nouns)
+            elif lemma in AFFECTIVE_NOUNS:
+                synset = wordnet.synset(AFFECTIVE_NOUNS[lemma])
+            else:
+                synset = None
+
+            result.append((lemma, tag, synset))
+
+        return result
+
     
     def __wordnet(self, text: str):
         pass
