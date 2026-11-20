@@ -17,7 +17,7 @@ O projeto foi concebido seguindo boas práticas de engenharia de software (Padr�
    * **Análise Sintática:** Árvores de Dependência (*Dependency Parsing* via `spaCy`) no lugar de padrões fixos de etiquetas POS.
    * **Representação Semântica:** *Embeddings* densos contextuais (*Sentence-Transformers*) e similaridade cosseno no lugar de métricas baseadas em grafos do *WordNet*.
    * **Modelagem Nebulosa Refinada:** Modificadores linguísticos paramétricos (*Hedges* de Zadeh $x^\alpha$), complementos assimétricos de Sugeno e agregação via operadores **OWA** (*Ordered Weighted Averaging*) ou T-conormas paramétricas.
-3. **Avaliação Comparativa Justa:** Pipeline de benchmark agnóstico ao modelo, permitindo comparar lado a lado o baseline clássico e novas abordagens sob exatamente as mesmas métricas (*Precision*, *Recall* e *F-measure* por limiar $t$, com o protocolo da Tabela 10 do artigo, aplicado sempre aos mesmos dados; ver `COMP.md`).
+3. **Avaliação Comparativa Justa:** Pipeline de benchmark agnóstico ao modelo, permitindo comparar lado a lado o baseline clássico e novas abordagens sob exatamente as mesmas métricas (*Precision*, *Recall* e *F-measure* por limiar $t$, com o protocolo da Tabela 10 do artigo, aplicado sempre aos mesmos dados; ver [`docs/COMP.md`](docs/COMP.md)).
 
 ---
 
@@ -26,7 +26,8 @@ O projeto foi concebido seguindo boas práticas de engenharia de software (Padr�
 ```text
 NeoSenticFuzzy/
 ├── data/                                 # Sentiment140 (não versionado)
-├── docs/                                 # Artigo base (não versionado)
+├── docs/
+│   └── COMP.md                           # Protocolo de comparação (mesmos dados)
 ├── results/                              # Tabelas de métricas, contagens da Figura 2 e comparacao.md
 ├── resultados/                           # Gráficos de comparação (PNG)
 ├── src/
@@ -44,10 +45,7 @@ NeoSenticFuzzy/
 │           └── emotions.py               # Contagem de emoções por nível sentic (Figura 2)
 ├── tests/                                # Testes (inclui os valores publicados no artigo)
 ├── run_demo.py                           # Exemplo do artigo nos dois modelos
-├── run_benchmark.py                      # Avaliação comparativa (Seção 6 do artigo)
 ├── run_chat.py                           # Chat no terminal com classificação em tempo real
-├── run_plots.py                          # Gráficos de comparação em resultados/
-├── COMP.md                               # Protocolo de comparação (mesmos dados)
 ├── pytest.ini
 └── requirements.txt
 ```
@@ -77,9 +75,9 @@ pip install -r requirements.txt
 
 O `requirements.txt` instala o PyTorch em versão CPU e o modelo `en_core_web_sm` do spaCy. Na primeira execução, os recursos do `nltk` (`wordnet`, `sentiwordnet`, `punkt_tab`, tagger) e o modelo `all-MiniLM-L6-v2` do Sentence-Transformers são baixados automaticamente.
 
-### 3. Preparar o Dataset para Benchmark (Opcional)
+### 3. Dataset (Sentiment140)
 
-Para executar a avaliação quantitativa da Seção 6.1 do artigo (Tabela 10), baixe o **Sentiment140** e extraia em `data/`:
+Os resultados usam o **Sentiment140**. Para tê-lo localmente, baixe e extraia em `data/`:
 
 ```bash
 mkdir -p data && cd data
@@ -119,20 +117,7 @@ Nível    | Pleasantness | Attention  | Sensitivity | Aptitude
 
 As emoções ativas são as mesmas da Tabela 8 do artigo (Ecstasy, Joy, Amazement, Apprehension, Admiration, Trust, Acceptance), mais Serenity. A diferença vem de `happy` ser ligado a `happiness.n.01` em vez de `happiness#n#2` (veja "Desvios do artigo").
 
-### 2. Benchmark Quantitativo (`run_benchmark.py`)
-Avalia os modelos registrados sobre uma amostra do *Sentiment140* variando os limiares $t \in \{\pm 0.1, \pm 0.2, \pm 0.4, \pm 0.6\}$ e exporta os resultados para `results/`:
-
-```bash
-python run_benchmark.py
-```
-
-Leva cerca de 3 minutos em CPU e gera as tabelas e o `results/comparacao.md`. Para refazer os gráficos de `resultados/` a partir desses resultados:
-
-```bash
-python run_plots.py
-```
-
-### 3. Chat em tempo real (`run_chat.py`)
+### 2. Chat em tempo real (`run_chat.py`)
 Conversa no terminal em que cada mensagem enviada alterna entre **Pessoa A** e **Pessoa B**. O painel da direita mostra, a cada mensagem, a classificação da conversa (positiva, negativa ou neutra, com limiar 0.1), a polaridade de cada pessoa e da última mensagem, as emoções dominantes da Hourglass e o tempo de processamento de cada atualização (útil para comparar os dois modelos rodando em terminais separados).
 
 ```bash
@@ -142,7 +127,7 @@ python run_chat.py --modelo baseline  # Loia & Senatore (2014)
 
 `Ctrl+L` limpa a conversa e `Ctrl+Q` sai. Os dois modelos só entendem **inglês** (SentiWordNet, WordNet, spaCy e MiniLM são recursos em inglês); frases em português dão resultados sem sentido.
 
-### 4. Testes
+### 3. Testes
 
 ```bash
 pytest
@@ -168,7 +153,7 @@ Os testes do baseline conferem os valores publicados no artigo: Eq. 1, Eqs. 2–
 
 ## 📊 Resultados
 
-Todos os modelos são avaliados **nos mesmos dados**: nossa amostra estratificada de 5000 tweets do Sentiment140 e o teste anotado manualmente (359 tweets), com as métricas da Seção 6.1 do artigo. A Tabela 10 do artigo **não** entra na comparação, porque usa outros tweets e outro gabarito; o motivo está em [`COMP.md`](COMP.md).
+Todos os modelos são avaliados **nos mesmos dados**: nossa amostra estratificada de 5000 tweets do Sentiment140 e o teste anotado manualmente (359 tweets), com as métricas da Seção 6.1 do artigo. A Tabela 10 do artigo **não** entra na comparação, porque usa outros tweets e outro gabarito; o motivo está em [`docs/COMP.md`](docs/COMP.md).
 
 F-measure na amostra de 5000 tweets (P, R e F completos em `results/comparacao.md`; gráficos em `resultados/`):
 
