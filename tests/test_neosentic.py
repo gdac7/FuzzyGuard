@@ -119,3 +119,12 @@ def test_negation_of_zero_polarity_with_active_emotion(model):
 def test_negation_scope_over_coordination(model):
     assert polarity(model, "The movie is not good or exciting.") < 0
     assert polarity(model, "The movie is not good, but exciting.") > 0
+
+def test_interjection_uses_sentiwordnet_senses(model):
+    units = model.extract_syntactic_units("Alas, the plan failed.")
+    model._analyze_units(units)
+
+    alas_unit = next(u for u in units if u["lemma"] == "alas")
+    assert alas_unit["pos"] == "INTJ"
+    assert alas_unit["sense"] is not None
+    assert alas_unit["polarity"] < 0

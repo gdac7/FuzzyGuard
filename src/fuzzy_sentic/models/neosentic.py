@@ -194,8 +194,6 @@ class NeoSenticFuzzy(SenticPipelineInterface):
         return self._units_from_span(self.nlp(sentence))
 
     def _senses(self, unit: Dict[str, Any]) -> List[Any]:
-        if unit["wn_pos"] is None:
-            return []
         return list(swn.senti_synsets(unit["lemma"], unit["wn_pos"]))
 
     @staticmethod
