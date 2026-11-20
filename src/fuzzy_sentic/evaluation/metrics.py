@@ -1,9 +1,60 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from src.fuzzy_sentic.config import EVALUATION_THRESHOLDS
 from src.fuzzy_sentic.interfaces import SenticPipelineInterface
+
+
+def predict(
+    pipeline: SenticPipelineInterface, dataset: pd.DataFrame, desc: str = ""
+) -> Tuple[np.ndarray, np.ndarray]:
+    polarities, tables = [], []
+    for text in tqdm(dataset["text"], desc=desc, leave=False):
+        polarity, table = pipeline.analyze_text(str(text))
+        polarities.append(polarity)
+        tables.append(table)
+    return np.array(polarities, dtype=float), np.array(tables)
+
+
+def _prf(retrieved: np.ndarray, relevant: np.ndarray) -> Tuple[float, float, float]:
+    tp = int((retrieved & relevant).sum())
+    precision = tp / retrieved.sum() if retrieved.sum() > 0 else 0.0
+    recall = tp / relevant.sum() if relevant.sum() > 0 else 0.0
+    f = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
+    return precision, recall, f
+
+
+def threshold_metrics(
+    polarities: np.ndarray,
+    labels: np.ndarray,
+    thresholds: Optional[List[float]] = None,
+) -> pd.DataFrame:
+    """
+    Protocolo da Tabela 10: para t > 0 são recuperados os tweets com polaridade > t
+    (positivos) ou < -t (negativos); os relevantes são os rotulados pelo oráculo.
+    """
+    rows = []
+    for t in thresholds or EVALUATION_THRESHOLDS:
+        for name, retrieved, relevant in (
+            ("Positive", polarities > t, labels == 1),
+            ("Negative", polarities < -t, labels == 0),
+        ):
+            p, r, f = _prf(retrieved, relevant)
+            rows.append({
+                "Threshold": f"±{t}",
+                "Polarity": name,
+                "Precision": round(p, 3),
+                "Recall": round(r, 3),
+                "F-measure": round(f, 3),
+            })
+    return pd.DataFrame(rows)
+
+
+def neutral_rate(polarities: np.ndarray) -> float:
+    """Fração de textos que o modelo deixa com polaridade exatamente 0."""
+    return float(np.isclose(polarities, 0.0).mean())
 
 
 def evaluate_thresholds(
@@ -11,57 +62,5 @@ def evaluate_thresholds(
     dataset: pd.DataFrame,
     thresholds: Optional[List[float]] = None,
 ) -> pd.DataFrame:
-    """
-    Avalia Precision, Recall e F-measure variando o limiar t (Tabela 10).
-    """
-    if thresholds is None:
-        thresholds = EVALUATION_THRESHOLDS
-
-    predictions = []
-    ground_truth = dataset["label"].to_numpy()
-
-    for text in dataset["text"]:
-        pred_polarity, _ = pipeline.analyze_text(str(text))
-        predictions.append(pred_polarity)
-
-    predictions_arr = np.array(predictions, dtype=float)
-    total_pos_real = int((ground_truth == 1).sum())
-    total_neg_real = int((ground_truth == 0).sum())
-
-    results = []
-    for t in thresholds:
-        # Classe Positiva (polaridade > t)
-        pred_pos = predictions_arr > t
-        tp_pos = int((pred_pos & (ground_truth == 1)).sum())
-        retrieved_pos = int(pred_pos.sum())
-
-        p_pos = tp_pos / retrieved_pos if retrieved_pos > 0 else 0.0
-        r_pos = tp_pos / total_pos_real if total_pos_real > 0 else 0.0
-        f_pos = (2 * p_pos * r_pos) / (p_pos + r_pos) if (p_pos + r_pos) > 0 else 0.0
-
-        results.append({
-            "Threshold": f"±{t}",
-            "Polarity": "Positive",
-            "Precision": round(p_pos, 3),
-            "Recall": round(r_pos, 3),
-            "F-measure": round(f_pos, 3),
-        })
-
-        # Classe Negativa (polaridade < -t)
-        pred_neg = predictions_arr < -t
-        tp_neg = int((pred_neg & (ground_truth == 0)).sum())
-        retrieved_neg = int(pred_neg.sum())
-
-        p_neg = tp_neg / retrieved_neg if retrieved_neg > 0 else 0.0
-        r_neg = tp_neg / total_neg_real if total_neg_real > 0 else 0.0
-        f_neg = (2 * p_neg * r_neg) / (p_neg + r_neg) if (p_neg + r_neg) > 0 else 0.0
-
-        results.append({
-            "Threshold": f"±{t}",
-            "Polarity": "Negative",
-            "Precision": round(p_neg, 3),
-            "Recall": round(r_neg, 3),
-            "F-measure": round(f_neg, 3),
-        })
-
-    return pd.DataFrame(results)
+    polarities, _ = predict(pipeline, dataset)
+    return threshold_metrics(polarities, dataset["label"].to_numpy(), thresholds)

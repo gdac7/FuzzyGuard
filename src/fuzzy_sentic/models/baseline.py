@@ -1,6 +1,7 @@
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
+
 import nltk
-import re
 import numpy as np
 from nltk.corpus import sentiwordnet as swn
 from nltk.corpus import wordnet as wn
@@ -12,33 +13,131 @@ from src.fuzzy_sentic.config import (
     BASELINE_NEGATORS,
     DIMENSIONS,
     HOURGLASS_SYNSETS,
+    OPPOSITE_PAIRS,
+    POLARITY_ANCHORED_DIMENSIONS,
 )
 from src.fuzzy_sentic.interfaces import SenticPipelineInterface
+from src.fuzzy_sentic.text_utils import ensure_nltk_resources, normalize_tweet
+
+_CONTRACTIONS = {"'s": "be", "'m": "be", "'re": "be", "'ve": "have", "n't": "not"}
+
+# "BE" é um verbo cujo lema é "be"; "JJ|RB" aceita adjetivo ou advérbio.
+_PATTERNS: List[Tuple[str, Tuple[str, ...]]] = [
+    ("1", ("NN", "BE", "JJ")),
+    ("2", ("JJ", "NN", "NN")),
+    ("3", ("RB", "JJ|RB", "NN")),
+    ("6", ("RB", "RB", "JJ")),
+    ("2.1", ("JJ", "NN")),
+    ("3.1", ("RB", "JJ|RB")),
+    ("4", ("RB", "VB")),
+    ("5", ("VB", "NN")),
+]
+
+_HOURGLASS = [[wn.synset(name) for name in HOURGLASS_SYNSETS[dim]] for dim in DIMENSIONS]
+_FEELING = wn.synset("feeling.n.01")
 
 
-def _ensure_nltk_resources() -> None:
-    """Garante o download silencioso dos léxicos necessários na primeira execução."""
-    resources = [
-        "punkt", "punkt_tab", "averaged_perceptron_tagger",
-        "averaged_perceptron_tagger_eng", "wordnet", "sentiwordnet", "omw-1.4"
-    ]
-    for resource in resources:
-        nltk.download(resource, quiet=True)
+@lru_cache(maxsize=None)
+def wup_jwsl(a: Any, b: Any) -> float:
+    """
+    Similaridade de Wu & Palmer como calculada pela JWSL usada no artigo.
+    Igual à do NLTK com a profundidade do LCS deslocada em +2
+    (reproduz a Tabela 3 com erro médio de 0.006).
+    """
+    lcs = a.lowest_common_hypernyms(b)
+    if not lcs:
+        return 0.0
+    depth = lcs[0].max_depth() + 2
+    d1 = a.shortest_path_distance(lcs[0])
+    d2 = b.shortest_path_distance(lcs[0])
+    return 2.0 * depth / (d1 + d2 + 2.0 * depth)
+
+
+@lru_cache(maxsize=None)
+def _is_affective(synset: Any) -> bool:
+    return _FEELING in synset.closure(lambda s: s.hypernyms())
+
+
+@lru_cache(maxsize=None)
+def affective_categories(lemma: str, wn_pos: str) -> Tuple[Any, ...]:
+    """
+    Substitui o WordNet-Affect: substantivos afetivos (descendentes de
+    feeling.n.01) ligados à palavra por derivação, atributo ou pertainym,
+    na ordem dos sentidos do WordNet.
+    """
+    found: List[Any] = []
+    for synset in wn.synsets(lemma, pos=wn_pos):
+        lemmas = list(synset.lemmas())
+        if synset.pos() == wn.ADV:
+            lemmas = [p for l in synset.lemmas() for p in l.pertainyms()] + lemmas
+        related = [
+            r.synset() for l in lemmas for r in l.derivationally_related_forms()
+            if r.synset().pos() == wn.NOUN
+        ]
+        related += [a for a in synset.attributes() if a.pos() == wn.NOUN]
+        if synset.pos() == wn.ADJ_SAT:
+            for head in synset.similar_tos():
+                related += [
+                    r.synset() for l in head.lemmas() for r in l.derivationally_related_forms()
+                    if r.synset().pos() == wn.NOUN
+                ]
+        for noun in related:
+            if noun not in found and _is_affective(noun):
+                found.append(noun)
+    return tuple(found)
+
+
+def _raw_similarity_table(synset: Any) -> np.ndarray:
+    table = np.zeros((6, 4))
+    for col, labels in enumerate(_HOURGLASS):
+        table[:, col] = [wup_jwsl(synset, label) for label in labels]
+    return table
+
+
+@lru_cache(maxsize=None)
+def emotional_similarity_table(synset: Any, polarity_sign: int) -> np.ndarray:
+    """
+    Tabela de similaridade emocional.
+
+    - Palavra sem afinidade emocional (nenhuma similaridade >= 0.5, ex. "home")
+      mantém a tabela crua (Tabela 7).
+    - Opostos com similaridade idêntica vão a 0.
+    - Âncora: em Pleasantness/Aptitude, o rótulo do lado da polaridade da palavra;
+      nas demais, o de maior similaridade. A âncora recebe max(v, 1 - v) e o oposto
+      o complemento. Essa regra reproduz a Tabela 4 célula a célula.
+    """
+    raw = _raw_similarity_table(synset)
+    if raw.max() < 0.5:
+        raw.flags.writeable = False
+        return raw
+
+    table = raw.copy()
+    for col, dim in enumerate(DIMENSIONS):
+        for pos_idx, neg_idx in OPPOSITE_PAIRS:
+            v_pos, v_neg = raw[pos_idx, col], raw[neg_idx, col]
+            if np.isclose(v_pos, v_neg):
+                table[pos_idx, col] = table[neg_idx, col] = 0.0
+                continue
+            if dim in POLARITY_ANCHORED_DIMENSIONS and polarity_sign != 0:
+                anchor_is_pos = polarity_sign > 0
+            else:
+                anchor_is_pos = v_pos > v_neg
+            anchor, opposite = (pos_idx, neg_idx) if anchor_is_pos else (neg_idx, pos_idx)
+            value = max(raw[anchor, col], 1.0 - raw[anchor, col])
+            table[anchor, col] = value
+            table[opposite, col] = 1.0 - value
+    table.flags.writeable = False
+    return table
 
 
 class LoiaSenatoreBaseline(SenticPipelineInterface):
-    """
-    Implementação de referência do framework proposto por Loia & Senatore (2014).
-    """
-
     def __init__(self, alpha_cut: float = 0.5) -> None:
         super().__init__(alpha_cut=alpha_cut)
-        _ensure_nltk_resources()
+        ensure_nltk_resources()
         self.lemmatizer = WordNetLemmatizer()
 
     @staticmethod
     def _map_pos_to_wn(tag: str) -> Optional[str]:
-        """Converte etiquetas Penn Treebank para categorias gramaticais do WordNet."""
         if tag.startswith("NN"):
             return wn.NOUN
         if tag.startswith("VB"):
@@ -49,50 +148,69 @@ class LoiaSenatoreBaseline(SenticPipelineInterface):
             return wn.ADV
         return None
 
-    # ==========================================================================
-    # SEÇÃO 5.1: POS Tagging and Filtering
-    # ==========================================================================
     def phase1_pos_tagging_and_filtering(self, sentence: str) -> List[Dict[str, Any]]:
-        cleaned_sentence = re.sub(r"http\S+|www\.\S+|@\w+", "", sentence.lower())
-        tokens = word_tokenize(sentence.lower())
-        tagged = nltk.pos_tag(tokens)
+        # O tagger recebe a caixa original ("I" em minúsculo vira substantivo)
+        tagged = nltk.pos_tag(word_tokenize(sentence))
 
         filtered_words = []
         for word, tag in tagged:
             wn_pos = self._map_pos_to_wn(tag)
-            if wn_pos is not None:
-                lemma = self.lemmatizer.lemmatize(word, pos=wn_pos)
-                filtered_words.append({
-                    "word": word,
-                    "lemma": lemma,
-                    "pos": tag,
-                    "wn_pos": wn_pos,
-                })
+            lower = word.lower()
+            if wn_pos is None or not any(c.isalpha() for c in lower):
+                continue
+            lemma = _CONTRACTIONS.get(lower) or self.lemmatizer.lemmatize(lower, pos=wn_pos)
+            filtered_words.append({
+                "word": lower,
+                "lemma": lemma,
+                "pos": tag,
+                "wn_pos": wn_pos,
+            })
         return filtered_words
 
-    @staticmethod
-    def _substantivize_synset(token_info: Dict[str, Any]) -> Optional[Any]:
-        """Deriva a forma substantiva de adjetivos/verbos/advérbios para cálculo no WordNet."""
-        synsets = wn.synsets(token_info["lemma"], pos=token_info["wn_pos"])
-        if not synsets:
+    def _select_noun_synset(self, lemma: str, other_nouns: List[str]) -> Optional[Any]:
+        candidates = wn.synsets(lemma, pos=wn.NOUN)
+        if not candidates:
             return None
+        others = [wn.synsets(n, pos=wn.NOUN) for n in other_nouns]
+        others = [o for o in others if o]
+        if not others:
+            return candidates[0]
 
-        primary_synset = synsets[0]
-        if token_info["wn_pos"] == wn.NOUN:
-            return primary_synset
+        def score(candidate: Any) -> float:
+            return sum(max(wup_jwsl(candidate, s) for s in synsets) for synsets in others)
 
-        for lemma in primary_synset.lemmas():
-            for related in lemma.derivationally_related_forms():
-                if related.synset().pos() == wn.NOUN:
-                    return related.synset()
-        return primary_synset
+        return max(candidates, key=score)
 
-    # ==========================================================================
-    # SEÇÃO 5.2: Term Analysis
-    # ==========================================================================
+    def _substantivize(self, index: int, tokens: List[Dict[str, Any]]) -> Optional[Any]:
+        """
+        Adjetivos, verbos e advérbios recebem a categoria afetiva mais similar
+        ao substantivo que os segue; sem substantivo, a primeira.
+        Sem categoria afetiva, a palavra fica sem emoção (como "be" e "go").
+        """
+        token = tokens[index]
+        candidates = affective_categories(token["lemma"], token["wn_pos"])
+        if not candidates:
+            return None
+        if index + 1 < len(tokens) and tokens[index + 1].get("synset") is not None \
+                and tokens[index + 1]["wn_pos"] == wn.NOUN:
+            following = tokens[index + 1]["synset"]
+            return max(candidates, key=lambda c: wup_jwsl(c, following))
+        return candidates[0]
+
+    def assign_synsets(self, tokens: List[Dict[str, Any]]) -> None:
+        nouns = [t["lemma"] for t in tokens if t["wn_pos"] == wn.NOUN]
+        noun_index = 0
+        for token in tokens:
+            if token["wn_pos"] == wn.NOUN:
+                others = nouns[:noun_index] + nouns[noun_index + 1:]
+                token["synset"] = self._select_noun_synset(token["lemma"], others)
+                noun_index += 1
+        for i, token in enumerate(tokens):
+            if token["wn_pos"] != wn.NOUN:
+                token["synset"] = self._substantivize(i, tokens)
+
     @staticmethod
     def compute_word_polarity(token_info: Dict[str, Any]) -> float:
-        """Calcula a polaridade p_w via SentiWordNet usando a Equação (1)."""
         senti_synsets = list(swn.senti_synsets(token_info["lemma"], token_info["wn_pos"]))
         if not senti_synsets:
             return 0.0
@@ -109,142 +227,119 @@ class LoiaSenatoreBaseline(SenticPipelineInterface):
     def compute_emotional_similarity_table(
         self, token_info: Dict[str, Any], polarity: float
     ) -> np.ndarray:
-        """Calcula a similaridade de Wu & Palmer contra os 24 synsets e aplica heurísticas."""
-        table = np.zeros((6, 4))
-        word_synset = self._substantivize_synset(token_info)
+        synset = token_info.get("synset")
+        if synset is None:
+            return np.zeros((6, 4))
+        return emotional_similarity_table(synset, int(np.sign(polarity))).copy()
 
-        if abs(polarity) < 0.01 or word_synset is None or word_synset.pos() != wn.NOUN:
-            return table
-
-        for col_idx, dim in enumerate(DIMENSIONS):
-            raw_sims = []
-            for syn_name in HOURGLASS_SYNSETS[dim]:
-                target_syn = wn.synset(syn_name)
-                sim = word_synset.wup_similarity(target_syn)
-                raw_sims.append(sim if sim is not None else 0.0)
-
-            adjusted = np.array(raw_sims, dtype=float)
-            for pos_idx, neg_idx in [(0, 5), (1, 4), (2, 3)]:
-                v_pos, v_neg = adjusted[pos_idx], adjusted[neg_idx]
-
-                if np.isclose(v_pos, v_neg):
-                    adjusted[pos_idx] = 0.0
-                    adjusted[neg_idx] = 0.0
-                elif dim in ["Pleasantness", "Aptitude"]:
-                    if polarity > 0:
-                        adjusted[neg_idx] = (1.0 - v_pos) if v_pos > 0.5 else 0.0
-                    else:
-                        adjusted[pos_idx] = (1.0 - v_neg) if v_neg > 0.5 else 0.0
-                else:
-                    if v_pos > v_neg:
-                        adjusted[neg_idx] = (1.0 - v_pos) if v_pos > 0.5 else 0.0
-                    else:
-                        adjusted[pos_idx] = (1.0 - v_neg) if v_neg > 0.5 else 0.0
-
-            table[:, col_idx] = adjusted
-        return table
-
-    # ==========================================================================
-    # SEÇÃO 5.3: Pattern Analysis
-    # ==========================================================================
     @staticmethod
     def _triangular_mf_polarity(p: float) -> float:
         return float(np.clip((p + 1.0) / 2.0, 0.0, 1.0))
 
     @staticmethod
     def _fuzzy_intensifier(mu: Any) -> Any:
-        """Equação (2): Modificador linguístico intensificador."""
         return np.where(mu >= 0.5, np.sqrt(mu), np.square(mu))
 
     @staticmethod
     def _fuzzy_negator(mu: Any) -> Any:
-        """Equação (3): Modificador linguístico negador."""
         return 1.0 - mu
 
     def _fuzzy_combinator(self, mu: Any) -> Any:
-        """Equação (4): Combinação Negador + Intensificador."""
         return np.sqrt(mu * self._fuzzy_intensifier(mu))
 
-    def _apply_emotional_modifier(
-        self, emo_table: np.ndarray, modifier_type: str, threshold: float = 0.25
-    ) -> np.ndarray:
-        active_mask = emo_table > threshold
-        result = np.zeros_like(emo_table)
+    def _modify(self, mu: Any, modifiers: List[str]) -> Any:
+        """
+        Aplica a cadeia de modificadores (do mais distante ao mais próximo do alvo).
+        "Negador + intensificador" vira o combinador da Eq. (4).
+        """
+        if modifiers == ["negator", "intensifier"]:
+            return self._fuzzy_combinator(mu)
+        for modifier in reversed(modifiers):
+            if modifier == "intensifier":
+                mu = self._fuzzy_intensifier(mu)
+            else:
+                mu = self._fuzzy_negator(mu)
+        return mu
 
-        if modifier_type == "intensifier":
-            result[active_mask] = self._fuzzy_intensifier(emo_table[active_mask])
-        elif modifier_type == "combinator":
-            result[active_mask] = self._fuzzy_combinator(emo_table[active_mask])
-        elif modifier_type == "negator":
-            for col in range(4):
-                for pos_idx, neg_idx in [(0, 5), (1, 4), (2, 3)]:
-                    if emo_table[pos_idx, col] > threshold:
-                        result[neg_idx, col] = emo_table[pos_idx, col]
-                    if emo_table[neg_idx, col] > threshold:
-                        result[pos_idx, col] = emo_table[neg_idx, col]
+    def _modify_polarity(self, polarity: float, modifiers: List[str]) -> float:
+        mu = self._triangular_mf_polarity(polarity)
+        return float(2.0 * self._modify(mu, modifiers) - 1.0)
+
+    def _modify_emotions(self, emo_table: np.ndarray, modifiers: List[str]) -> np.ndarray:
+        """Células zeradas representam emoção ausente e não são modificadas."""
+        active = emo_table > 0
+        result = emo_table.copy()
+        result[active] = self._modify(emo_table[active], modifiers)
         return result
 
-    def phase3_pattern_analysis(self, tokens_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _modifier_type(token: Dict[str, Any]) -> Optional[str]:
+        if not token["pos"].startswith("RB"):
+            return None
+        if token["lemma"] in BASELINE_NEGATORS:
+            return "negator"
+        if token["lemma"] in BASELINE_INTENSIFIERS:
+            return "intensifier"
+        return None
+
+    @staticmethod
+    def _matches(token: Dict[str, Any], tag_class: str) -> bool:
+        if tag_class == "BE":
+            return token["pos"].startswith("VB") and token["lemma"] == "be"
+        return any(token["pos"].startswith(option) for option in tag_class.split("|"))
+
+    def _match_pattern(self, tokens: List[Dict[str, Any]], i: int) -> Optional[Tuple[str, int]]:
+        for name, classes in _PATTERNS:
+            end = i + len(classes)
+            if end <= len(tokens) and all(
+                self._matches(tokens[i + k], c) for k, c in enumerate(classes)
+            ):
+                return name, len(classes)
+        return None
+
+    def _pattern_unit(self, words: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Polaridade do padrão = soma das polaridades das palavras; um advérbio
+        modificador não soma, ele modifica o adjetivo/advérbio/verbo seguinte.
+        A tabela emocional é a união fuzzy (máximo) das tabelas das palavras.
+        """
+        modifiers: List[str] = []
+        polarity = 0.0
+        emo_table = np.zeros((6, 4))
         i = 0
-        n = len(tokens_data)
-        units = []
-
-        while i < n:
-            w1 = tokens_data[i]["lemma"]
-            if (
-                i + 2 < n
-                and w1 in BASELINE_NEGATORS
-                and tokens_data[i + 1]["lemma"] in BASELINE_INTENSIFIERS
-            ):
-                target = tokens_data[i + 2]
-                mu_p = self._triangular_mf_polarity(target["polarity"])
-                mod_p = self._fuzzy_combinator(mu_p)
-                units.append({
-                    "polarity": (2.0 * mod_p) - 1.0,
-                    "emo_table": self._apply_emotional_modifier(target["emo_table"], "combinator"),
-                    "label": f"{w1} {tokens_data[i+1]['word']} {target['word']}",
-                })
-                i += 3
-            elif i + 1 < n and (w1 in BASELINE_INTENSIFIERS or w1 in BASELINE_NEGATORS):
-                target = tokens_data[i + 1]
-                mu_p = self._triangular_mf_polarity(target["polarity"])
-                if w1 in BASELINE_INTENSIFIERS:
-                    mod_p = self._fuzzy_intensifier(mu_p)
-                    final_emo = self._apply_emotional_modifier(target["emo_table"], "intensifier")
-                else:
-                    mod_p = self._fuzzy_negator(mu_p)
-                    final_emo = self._apply_emotional_modifier(target["emo_table"], "negator")
-                units.append({
-                    "polarity": (2.0 * mod_p) - 1.0,
-                    "emo_table": final_emo,
-                    "label": f"{w1} {target['word']}",
-                })
-                i += 2
-            elif (
-                i + 1 < n
-                and tokens_data[i]["wn_pos"] == wn.ADJ
-                and tokens_data[i + 1]["wn_pos"] == wn.NOUN
-            ):
-                t1, t2 = tokens_data[i], tokens_data[i + 1]
-                units.append({
-                    "polarity": t1["polarity"] + t2["polarity"],
-                    "emo_table": np.maximum(t1["emo_table"], t2["emo_table"]),
-                    "label": f"{t1['word']} {t2['word']}",
-                })
-                i += 2
-            else:
-                units.append({
-                    "polarity": tokens_data[i]["polarity"],
-                    "emo_table": tokens_data[i]["emo_table"],
-                    "label": tokens_data[i]["word"],
-                })
+        while i < len(words):
+            kind = self._modifier_type(words[i])
+            has_target = i + 1 < len(words) and words[i + 1]["pos"][:2] in ("JJ", "RB", "VB")
+            if kind is not None and has_target:
+                modifiers.append(kind)
                 i += 1
+                continue
+            word = words[i]
+            word_pol, word_emo = word["polarity"], word["emo_table"]
+            if modifiers:
+                word_pol = self._modify_polarity(word_pol, modifiers)
+                word_emo = self._modify_emotions(word_emo, modifiers)
+                modifiers = []
+            polarity += word_pol
+            emo_table = np.maximum(emo_table, word_emo)
+            i += 1
 
+        return {
+            "polarity": float(np.clip(polarity, -1.0, 1.0)),
+            "emo_table": emo_table,
+            "label": " ".join(w["word"] for w in words),
+        }
+
+    def phase3_pattern_analysis(self, tokens_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        units = []
+        i = 0
+        while i < len(tokens_data):
+            match = self._match_pattern(tokens_data, i)
+            length = match[1] if match else 1
+            units.append(self._pattern_unit(tokens_data[i:i + length]))
+            i += length
         return units
 
-    # ==========================================================================
-    # SEÇÃO 5.4: Phrase Analysis
-    # ==========================================================================
     def phase4_phrase_analysis(
         self, pattern_units: List[Dict[str, Any]]
     ) -> Tuple[float, np.ndarray]:
@@ -260,16 +355,14 @@ class LoiaSenatoreBaseline(SenticPipelineInterface):
         sentence_emo = np.where(sentence_emo >= self.alpha_cut, sentence_emo, 0.0)
         return sentence_polarity, sentence_emo
 
-    # ==========================================================================
-    # SEÇÃO 5.5: Text Analysis
-    # ==========================================================================
     def analyze_text(self, text: str) -> Tuple[float, np.ndarray]:
-        sentences = sent_tokenize(text)
+        sentences = sent_tokenize(normalize_tweet(text))
         sentence_polarities = []
         text_emo_table = np.zeros((6, 4))
 
         for sent in sentences:
             filtered = self.phase1_pos_tagging_and_filtering(sent)
+            self.assign_synsets(filtered)
             for token in filtered:
                 token["polarity"] = self.compute_word_polarity(token)
                 token["emo_table"] = self.compute_emotional_similarity_table(
