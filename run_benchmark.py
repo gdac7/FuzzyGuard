@@ -51,6 +51,30 @@ não ativam nenhuma emoção acima de 0.5. A Figura 2 (`results/fig2_*.csv`) mos
 extremos: com corte 0.2, o baseline ativa quase todas as emoções em quase todos os tweets,
 e o Neo separa positivos de negativos (Joy em 523 positivos × 44 negativos), mas com menos
 tweets por emoção.
+
+## Por que o Neo recupera mais tweets, mas ativa menos emoções
+
+Parece contraditório, mas são duas saídas diferentes de cada modelo, calculadas de forma
+independente e com limiares diferentes:
+
+| Saída | Vem de | Limiar | Onde aparece |
+| :--- | :--- | :--- | :--- |
+| Polaridade (−1 a +1) | SentiWordNet | ±t (0.1, 0.2, 0.4, 0.6) | Precision, Recall e F-measure |
+| Emoções (matriz 6×4, 0 a 1) | Wu-Palmer (baseline) ou cosseno de embeddings (Neo) | corte 0.2 | Figura 2 / `fig2_*.csv` |
+
+- **Baseline:** polaridade fraca, porque as médias (Eq. 1 sobre todos os sentidos e média de
+  todas as palavras da frase) puxam tudo para perto de zero; poucos tweets passam de ±t e o
+  recall é baixo. As emoções, ao contrário, são altas em quase tudo, porque o Wu-Palmer dá
+  similaridade alta entre qualquer palavra e quase todas as emoções; quase todo tweet passa
+  do corte 0.2.
+- **NeoSenticFuzzy:** polaridade forte, porque a IOWA dá mais peso à opinião mais forte da
+  frase e o sentido de cada palavra é escolhido pelo contexto; mais tweets passam de ±t e o
+  recall é maior. As emoções são seletivas, porque o cosseno discrimina melhor e θ zera as
+  similaridades fracas; poucos tweets passam do corte.
+
+Na Figura 2, "tweets positivos/negativos" usa só o sinal da polaridade (> 0 ou < 0), sem o
+limiar t. Por isso quase todos os tweets entram em algum grupo nos dois modelos, e o tamanho
+das barras depende apenas de quantos ativam cada emoção.
 """
 
 
