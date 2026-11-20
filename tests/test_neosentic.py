@@ -106,3 +106,12 @@ def test_oov_contextual_emotion_projection(model):
     assert "That joke was really cringeworthy." in model._emotional_query_text(oov_unit)
     assert oov_unit["emo_table"].max() > 0.0
     assert oov_unit["emo_table"][3:].max() > oov_unit["emo_table"][:3].max()
+
+def test_negation_of_zero_polarity_with_active_emotion(model):
+    emo = np.zeros((6, 4))
+    emo[1, 0] = 0.6
+    pol, negated_emo = model.apply_fuzzy_modifiers(0.0, emo, [("neg", 0.0)])
+
+    assert pol < 0.0
+    assert negated_emo[4, 0] > 0.0
+    assert pol == pytest.approx(-negated_emo[4, 0])

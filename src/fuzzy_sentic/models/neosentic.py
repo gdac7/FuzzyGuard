@@ -241,20 +241,26 @@ class NeoSenticFuzzy(SenticPipelineInterface):
     ) -> Tuple[float, np.ndarray]:
         emo_table = emo_table.copy()
         for kind, alpha in modifiers:
-            sign = np.sign(polarity)
-            strength = abs(polarity)
             if kind == "hedge":
+                sign = np.sign(polarity)
+                strength = abs(polarity)
                 polarity = float(sign * strength ** (1.0 / alpha))
                 active = emo_table > 0
                 emo_table[active] = emo_table[active] ** (1.0 / alpha)
             else:
-                lam = NEO_SUGENO_LAMBDA_POS if polarity > 0 else NEO_SUGENO_LAMBDA_NEG
-                polarity = float(-sign * sugeno_attenuation(strength, lam))
                 negated = np.zeros_like(emo_table)
                 for pos_idx, neg_idx in OPPOSITE_PAIRS:
                     negated[pos_idx] = sugeno_attenuation(emo_table[neg_idx], NEO_SUGENO_LAMBDA_EMOTION)
                     negated[neg_idx] = sugeno_attenuation(emo_table[pos_idx], NEO_SUGENO_LAMBDA_EMOTION)
                 emo_table = negated
+
+                if np.isclose(polarity, 0.0) and emo_table.any():
+                    polarity = float(emo_table[:3].max() - emo_table[3:].max())
+                else:
+                    sign = np.sign(polarity)
+                    strength = abs(polarity)
+                    lam = NEO_SUGENO_LAMBDA_POS if polarity > 0 else NEO_SUGENO_LAMBDA_NEG
+                    polarity = float(-sign * sugeno_attenuation(strength, lam))
         return polarity, emo_table
 
     def _union(self, tables: Iterable[np.ndarray]) -> np.ndarray:
