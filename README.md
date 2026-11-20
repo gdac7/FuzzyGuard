@@ -28,7 +28,7 @@ NeoSenticFuzzy/
 ├── data/                                 # Sentiment140 (não versionado)
 ├── docs/
 │   └── COMP.md                           # Protocolo de comparação (mesmos dados)
-├── results/                              # Tabelas de métricas, contagens da Figura 2 e comparacao.md
+├── results/                              # Tabelas de métricas e contagens da Figura 2 (CSV)
 ├── resultados_execucao/                  # Gráficos de comparação (PNG)
 ├── src/
 │   └── fuzzy_sentic/
@@ -155,7 +155,7 @@ Os testes do baseline conferem os valores publicados no artigo: Eq. 1, Eqs. 2–
 
 Todos os modelos são avaliados **nos mesmos dados**: nossa amostra estratificada de 5000 tweets do Sentiment140 e o teste anotado manualmente (359 tweets), com as métricas da Seção 6.1 do artigo. A Tabela 10 do artigo **não** entra na comparação, porque usa outros tweets e outro gabarito; o motivo está em [`docs/COMP.md`](docs/COMP.md).
 
-F-measure na amostra de 5000 tweets (P, R e F completos em `results/comparacao.md`; gráficos em `resultados_execucao/`):
+F-measure na amostra de 5000 tweets (P, R e F completos em `results/table10_*.csv`; gráficos em `resultados_execucao/`):
 
 | Limiar | Classe | Baseline original | Baseline corrigido | NeoSenticFuzzy |
 | :--- | :--- | ---: | ---: | ---: |
@@ -172,7 +172,7 @@ No teste manual, o F em ±0.1 vai de 0.673 / 0.419 (baseline corrigido) para 0.7
 
 O método do artigo produz polaridades pequenas: a Eq. 1 faz média sobre todos os sentidos da palavra, e a média da frase inclui palavras quase neutras (*"He is happy to go home"* dá 0.25). Por isso poucos tweets passam de ±0.4. O NeoSenticFuzzy ataca exatamente esses pontos (sentido escolhido pelo contexto e agregação IOWA) e melhora o F em todos os limiares, com precisão parecida.
 
-**Figura 2.** No baseline, com corte 0.2 praticamente todos os tweets ativam todas as emoções: substantivos sem afinidade emocional mantêm a tabela crua (≈0.2), como `home` na Tabela 7, e palavras afetivas ficam acima de 0.5 em quase todos os rótulos. No Neo, as emoções aparecem em menos tweets, mas do lado certo: Joy em 523 tweets positivos contra 44 negativos, e Sadness em 74 contra 235 (`results/fig2_*.csv`). Como o Sentiment140 não tem rótulos de emoção, isso mostra coerência, não acerto. A explicação completa está em `results/comparacao.md`.
+**Figura 2.** No baseline, com corte 0.2 praticamente todos os tweets ativam todas as emoções: substantivos sem afinidade emocional mantêm a tabela crua (≈0.2), como `home` na Tabela 7, e palavras afetivas ficam acima de 0.5 em quase todos os rótulos. No Neo, as emoções aparecem em menos tweets, mas do lado certo: Joy em 523 tweets positivos contra 44 negativos, e Sadness em 74 contra 235 (`results/fig2_*.csv`). Como o Sentiment140 não tem rótulos de emoção, isso mostra coerência, não acerto.
 
 ## ↔️ Desvios do artigo
 
