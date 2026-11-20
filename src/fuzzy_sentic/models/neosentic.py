@@ -26,6 +26,8 @@ from src.fuzzy_sentic.config import (
     NEO_YAGER_W,
     OPPOSITE_PAIRS,
     POLARITY_ANCHORED_DIMENSIONS,
+    NEO_ADVERSATIVES,
+    NEO_CONCESSIVE_WEIGHT
 )
 from src.fuzzy_sentic.interfaces import SenticPipelineInterface
 from src.fuzzy_sentic.text_utils import ensure_nltk_resources, normalize_tweet
@@ -113,14 +115,50 @@ class NeoSenticFuzzy(SenticPipelineInterface):
                 modifiers.append(("neg", 0.0))
         return modifiers
 
+    def _concessive_token_indices(self, span: Any) -> set[int]:
+        """
+        Identifica os índices (tok.i) dos tokens pertencentes a orações
+        concedidas via estrutura de dependências (advcl/mark e conj/cc).
+        """
+        concessive: set[int] = set()
+
+        for tok in span:
+            # Caso 1: Oração subordinada concessiva ("Although X, Y" ou "Y, although X")
+            if tok.dep_ == "advcl" and any(
+                c.dep_ == "mark" and c.lemma_.lower() in NEO_ADVERSATIVES
+                for c in tok.children
+            ):
+                concessive.update(t.i for t in tok.subtree)
+
+            # Caso 2: Oração coordenada adversativa ("X, but Y" ou "X, however Y")
+            elif tok.dep_ in {"conj", "parataxis"} and tok.head is not tok:
+                has_head_cc = any(
+                    c.dep_ == "cc" and c.lemma_.lower() in NEO_ADVERSATIVES
+                    for c in tok.head.children
+                )
+                has_local_adv = any(
+                    c.dep_ in {"cc", "advmod"} and c.lemma_.lower() in NEO_ADVERSATIVES
+                    for c in tok.children
+                )
+                if has_head_cc or has_local_adv:
+                    excluded = {t.i for t in tok.subtree}
+                    concessive.update(
+                        t.i for t in tok.head.subtree if t.i not in excluded
+                    )
+
+        return concessive
+
     def _units_from_span(self, span: Any) -> List[Dict[str, Any]]:
+        concessive_ids = self._concessive_token_indices(span)
         units = []
+
         for token in span:
             lemma = token.lemma_.lower()
-            if token.pos_ not in _CONTENT_POS or not token.is_alpha or token.is_stop:
+            if token.pos_ not in _CONTENT_POS or not token.is_alpha:
                 continue
             if self._modifier_of(token) is not None or lemma in NEO_NEGATORS:
                 continue
+
             units.append({
                 "word": token.lower_,
                 "lemma": lemma,
@@ -128,7 +166,9 @@ class NeoSenticFuzzy(SenticPipelineInterface):
                 "wn_pos": _CONTENT_POS[token.pos_],
                 "modifiers": self._collect_modifiers(token),
                 "sentence": span.text,
+                "weight": NEO_CONCESSIVE_WEIGHT if token.i in concessive_ids else 1.0,
             })
+
         return units
 
     def extract_syntactic_units(self, sentence: str) -> List[Dict[str, Any]]:
@@ -239,9 +279,12 @@ class NeoSenticFuzzy(SenticPipelineInterface):
         self._embed(sense_texts)
         for u in units:
             emo = self.compute_emotional_similarity_table(u)
-            u["polarity"], u["emo_table"] = self.apply_fuzzy_modifiers(
+            pol, emo = self.apply_fuzzy_modifiers(
                 u["polarity"], emo, u["modifiers"]
             )
+            w = u.get("weight", 1.0)
+            u["polarity"] = pol * w
+            u["emo_table"] = emo * w
 
     def analyze_text(self, text: str) -> Tuple[float, np.ndarray]:
         doc = self.nlp(normalize_tweet(text))

@@ -86,3 +86,13 @@ def test_opposite_emotions_do_not_coexist(model):
         table = unit["emo_table"]
         for pos_idx, neg_idx in [(0, 5), (1, 4), (2, 3)]:
             assert np.all((table[pos_idx] == 0) | (table[neg_idx] == 0))
+
+def test_affective_stopwords_are_preserved(model):
+    units = model.extract_syntactic_units("I feel alone.")
+    assert any(u["lemma"] == "alone" for u in units)
+    assert polarity(model, "I feel well.") > 0
+    
+def test_adversative_and_concessive_clauses(model):
+    assert polarity(model, "The acting is wonderful, but the ending is terrible.") < 0
+    assert polarity(model, "Although the acting was wonderful, the ending was terrible.") < 0
+    assert polarity(model, "The ending was terrible, although the acting was wonderful.") < 0

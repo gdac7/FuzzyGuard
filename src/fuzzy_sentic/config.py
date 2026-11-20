@@ -88,3 +88,9 @@ NEO_OWA_BETA = 0.5
 
 # T-conorma de Yager para união das emoções: min(1, (a^w + b^w)^(1/w))
 NEO_YAGER_W = 3.0
+
+# Conjunções e marcadores adversativos/concessivos e fator de atenuação da oração concedida
+NEO_ADVERSATIVES: Set[str] = {
+    "but", "however", "although", "though", "yet", "nevertheless", "nonetheless"
+}
+NEO_CONCESSIVE_WEIGHT = 0.5
