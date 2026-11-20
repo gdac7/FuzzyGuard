@@ -53,4 +53,4 @@ O NeoSenticFuzzy tem o maior F-measure em todos os limiares, nos dois conjuntos.
 
 - `results/comparacao.md`: Precision, Recall e F de todos os modelos nos dois conjuntos.
 - `results/table10_<modelo>_<conjunto>.csv`: métricas de cada execução.
-- `resultados/*.png`: gráficos.
+- `resultados_execucao/*.png`: gráficos.
