@@ -115,3 +115,7 @@ def test_negation_of_zero_polarity_with_active_emotion(model):
     assert pol < 0.0
     assert negated_emo[4, 0] > 0.0
     assert pol == pytest.approx(-negated_emo[4, 0])
+
+def test_negation_scope_over_coordination(model):
+    assert polarity(model, "The movie is not good or exciting.") < 0
+    assert polarity(model, "The movie is not good, but exciting.") > 0

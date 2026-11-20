@@ -93,6 +93,20 @@ class NeoSenticFuzzy(SenticPipelineInterface):
             return ("hedge", NEO_HEDGES[lemma])
         return None
 
+    @staticmethod
+    def _is_adversative_conj(node: Any) -> bool:
+        if node.dep_ != "conj" or node.head is node:
+            return False
+        head_adv = any(
+            c.dep_ == "cc" and c.lemma_.lower() in NEO_ADVERSATIVES
+            for c in node.head.children
+        )
+        local_adv = any(
+            c.dep_ in {"cc", "advmod"} and c.lemma_.lower() in NEO_ADVERSATIVES
+            for c in node.children
+        )
+        return head_adv or local_adv
+
     def _collect_modifiers(self, token: Any) -> List[Tuple[str, float]]:
         """Modificadores do token, do mais próximo ao mais distante (ordem de aplicação)."""
         local = []
@@ -109,7 +123,12 @@ class NeoSenticFuzzy(SenticPipelineInterface):
         modifiers = [m for _, m in sorted(local, key=lambda item: item[0])]
 
         node = token
-        while node.dep_ in _NEGATION_SCOPE_DEPS and node.head is not node:
+        while node.head is not node:
+            if node.dep_ == "conj":
+                if self._is_adversative_conj(node):
+                    break
+            elif node.dep_ not in _NEGATION_SCOPE_DEPS:
+                break
             node = node.head
             if any(self._modifier_of(c) == ("neg", 0.0) for c in node.children):
                 modifiers.append(("neg", 0.0))
