@@ -136,7 +136,7 @@ def main() -> None:
     figure_metric(sample, "F-measure", "F-measure por limiar (Sentiment140, 5000 tweets)",
                   OUT / "01_fmeasure_5000.png")
     figure_precision_recall(sample, OUT / "02_precision_recall_5000.png")
-    figure_metric(manual, "F-measure", "F-measure por limiar (teste anotado manualmente, 359 tweets)",
+    figure_metric(manual, "F-measure", "F-measure por limiar (conjunto de teste do Sentiment140, 359 tweets)",
                   OUT / "03_fmeasure_teste_manual.png")
     figure_emotions(OUT / "04_emocoes_pleasantness.png")
     print(f"Gráficos salvos em {OUT}/")
