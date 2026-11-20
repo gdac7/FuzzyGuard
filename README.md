@@ -44,6 +44,7 @@ NeoSenticFuzzy/
 │           ├── metrics.py                # Precision, Recall e F-measure por limiar (Tabela 10)
 │           └── emotions.py               # Contagem de emoções por nível sentic (Figura 2)
 ├── tests/                                # Testes (inclui os valores publicados no artigo)
+├── run_demo.py                           # Exemplo do artigo nos dois modelos
 ├── run_chat.py                           # Chat no terminal com classificação em tempo real
 ├── pytest.ini
 └── requirements.txt
@@ -90,7 +91,33 @@ São usados `training.1600000.processed.noemoticon.csv` (amostra de 5000 tweets)
 
 ## 🚀 Como Utilizar
 
-### 1. Chat em tempo real (`run_chat.py`)
+### 1. Demonstração Qualitativa (`run_demo.py`)
+Executa a análise de sentimento e extrai a matriz emocional completa ($6 \text{ níveis sentic} \times 4 \text{ dimensões da Hourglass of Emotions}$) para sentenças de exemplo:
+
+```bash
+python run_demo.py
+```
+
+**Exemplo de saída** (frase do exemplo do artigo, Seções 5.1–5.4):
+```text
+Modelo: LoiaSenatoreBaseline
+Texto analisado: 'He is happy to go home.'
+Polaridade Global: 0.2502
+
+Matriz Emocional Final (6 Níveis Sentic x 4 Dimensões):
+Nível    | Pleasantness | Attention  | Sensitivity | Aptitude
+--------------------------------------------------------------
++3       | 0.889        | 0.000      | 0.000       | 0.706
++2       | 0.824        | 0.000      | 0.000       | 0.625
++1       | 0.556        | 0.000      | 0.000       | 0.625
+-1       | 0.000        | 0.000      | 0.778       | 0.000
+-2       | 0.000        | 0.000      | 0.000       | 0.000
+-3       | 0.000        | 0.750      | 0.000       | 0.000
+```
+
+As emoções ativas são as mesmas da Tabela 8 do artigo (Ecstasy, Joy, Amazement, Apprehension, Admiration, Trust, Acceptance), mais Serenity. A diferença vem de `happy` ser ligado a `happiness.n.01` em vez de `happiness#n#2` (veja "Desvios do artigo").
+
+### 2. Chat em tempo real (`run_chat.py`)
 Conversa no terminal em que cada mensagem enviada alterna entre **Pessoa A** e **Pessoa B**. O painel da direita mostra, a cada mensagem, a classificação da conversa (positiva, negativa ou neutra, com limiar 0.1), a polaridade de cada pessoa e da última mensagem, as emoções dominantes da Hourglass e o tempo de processamento de cada atualização (útil para comparar os dois modelos rodando em terminais separados).
 
 ```bash
@@ -100,7 +127,7 @@ python run_chat.py --modelo baseline  # Loia & Senatore (2014)
 
 `Ctrl+L` limpa a conversa e `Ctrl+Q` sai. Os dois modelos só entendem **inglês** (SentiWordNet, WordNet, spaCy e MiniLM são recursos em inglês); frases em português dão resultados sem sentido.
 
-### 2. Testes
+### 3. Testes
 
 ```bash
 pytest
