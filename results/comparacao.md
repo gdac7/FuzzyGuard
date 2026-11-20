@@ -1,6 +1,6 @@
 # Comparação entre os modelos (mesmos dados)
 
-Ver `COMP.md` para o protocolo.
+Ver `docs/COMP.md` para o protocolo.
 
 ## Sentiment140: amostra estratificada de 5000 tweets do treino
 
