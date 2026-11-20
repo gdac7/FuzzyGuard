@@ -96,3 +96,13 @@ def test_adversative_and_concessive_clauses(model):
     assert polarity(model, "The acting is wonderful, but the ending is terrible.") < 0
     assert polarity(model, "Although the acting was wonderful, the ending was terrible.") < 0
     assert polarity(model, "The ending was terrible, although the acting was wonderful.") < 0
+
+def test_oov_contextual_emotion_projection(model):
+    units = model.extract_syntactic_units("That joke was really cringeworthy.")
+    model._analyze_units(units)
+
+    oov_unit = next(u for u in units if u["sense"] is None)
+    assert oov_unit["word"] == "cringeworthy"
+    assert "That joke was really cringeworthy." in model._emotional_query_text(oov_unit)
+    assert oov_unit["emo_table"].max() > 0.0
+    assert oov_unit["emo_table"][3:].max() > oov_unit["emo_table"][:3].max()

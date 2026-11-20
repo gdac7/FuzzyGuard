@@ -209,9 +209,14 @@ class NeoSenticFuzzy(SenticPipelineInterface):
         scores = np.array([s.pos_score() - s.neg_score() for s in senses])
         return float(weights @ scores)
 
-    def compute_emotional_similarity_table(self, unit: Dict[str, Any]) -> np.ndarray:
+    def _emotional_query_text(self, unit: Dict[str, Any]) -> str:
         sense = unit.get("sense")
-        text = self._gloss(unit, sense) if sense is not None else unit["word"]
+        if sense is not None:
+            return self._gloss(unit, sense)
+        return f"{unit['word']}: affective expression in '{unit['sentence']}'"
+
+    def compute_emotional_similarity_table(self, unit: Dict[str, Any]) -> np.ndarray:
+        text = self._emotional_query_text(unit)
         sims = self._labels @ self._embed([text])[0]
         table = np.clip((sims - NEO_EMOTION_THETA) / (1.0 - NEO_EMOTION_THETA), 0.0, 1.0)
         table = table.reshape(4, 6).T.copy()
@@ -285,9 +290,7 @@ class NeoSenticFuzzy(SenticPipelineInterface):
 
         for u in units:
             u["polarity"] = self.compute_unit_polarity(u)
-        sense_texts = [
-            self._gloss(u, u["sense"]) if u["sense"] is not None else u["word"] for u in units
-        ]
+        sense_texts = [self._emotional_query_text(u) for u in units]
         self._embed(sense_texts)
         for u in units:
             emo = self.compute_emotional_similarity_table(u)
