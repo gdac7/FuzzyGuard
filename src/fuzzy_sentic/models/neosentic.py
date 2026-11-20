@@ -263,7 +263,19 @@ class NeoSenticFuzzy(SenticPipelineInterface):
     ) -> Tuple[float, np.ndarray]:
         polarity = iowa(u["polarity"] for u in units)
         emo = self._union(u["emo_table"] for u in units)
-        return polarity, np.where(emo >= self.alpha_cut, emo, 0.0)
+        return polarity, emo
+
+    @staticmethod
+    def _aggregate_emotion_tables(tables: List[np.ndarray]) -> np.ndarray:
+        """Agrega as matrizes (6, 4) entre sentenças via IOWA célula a célula."""
+        if not tables:
+            return np.zeros((6, 4))
+        stacked = np.stack(tables, axis=0)
+        aggregated = np.zeros((6, 4))
+        for row in range(6):
+            for col in range(4):
+                aggregated[row, col] = iowa(stacked[:, row, col])
+        return aggregated
 
     def _analyze_units(self, units: List[Dict[str, Any]]) -> None:
         texts = [u["sentence"] for u in units]
@@ -293,4 +305,5 @@ class NeoSenticFuzzy(SenticPipelineInterface):
 
         results = [self.aggregate_phrase(units) for units in sentences if units]
         total_polarity = iowa(p for p, _ in results)
-        return total_polarity, self._union(e for _, e in results)
+        total_emo = self._aggregate_emotion_tables([e for _, e in results])
+        return total_polarity, np.where(total_emo >= self.alpha_cut, total_emo, 0.0)
