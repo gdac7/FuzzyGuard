@@ -98,6 +98,12 @@ class NeoSenticFuzzy(SenticPipelineInterface):
             modifier = self._modifier_of(child)
             if modifier is not None:
                 local.append((abs(child.i - token.i), modifier))
+                if modifier[0] == "hedge":
+                    for grandchild in child.children:
+                        gc_mod = self._modifier_of(grandchild)
+                        if gc_mod == ("neg", 0.0):
+                            local.append((abs(grandchild.i - token.i), gc_mod))
+
         modifiers = [m for _, m in sorted(local, key=lambda item: item[0])]
 
         node = token

@@ -65,6 +65,14 @@ def test_negation_and_hedges(model):
     assert polarity(model, "The movie is very good.") > good
     assert polarity(model, "The movie is slightly good.") < good
 
+def test_compound_negation_and_hedge(model):
+    good = polarity(model, "The movie is good.")
+    assert polarity(model, "The movie is not very good.") < 0
+    assert polarity(model, "Not very good.") < 0
+    assert polarity(model, "The movie is not very good.") < good
+
+    _, emo_table = model.analyze_text("Not very good.")
+    assert emo_table[3:, 0].sum() >= emo_table[:3, 0].sum()
 
 def test_negation_scope_through_dependencies(model):
     assert polarity(model, "I don't think it's good.") < 0
