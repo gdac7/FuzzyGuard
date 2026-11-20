@@ -45,7 +45,7 @@ NeoSenticFuzzy/
 ├── run_demo.py                           # Exemplo do artigo nos dois modelos
 ├── run_benchmark.py                      # Avaliação comparativa (Seção 6 do artigo)
 ├── run_chat.py                           # Chat no terminal com classificação em tempo real
-├── run_plots.py                          # Gráficos de comparação em docs/resultados/
+├── run_plots.py                          # Gráficos de comparação em resultados/
 ├── COMP.md                               # Protocolo de comparação (mesmos dados)
 └── requirements.txt
 ```
@@ -148,7 +148,7 @@ Os testes do baseline conferem os valores publicados no artigo: Eq. 1, Eqs. 2–
 
 Todos os modelos são avaliados **nos mesmos dados**: nossa amostra estratificada de 5000 tweets do Sentiment140 e o teste anotado manualmente (359 tweets), com as métricas da Seção 6.1 do artigo. A Tabela 10 do artigo **não** entra na comparação, porque usa outros tweets e outro gabarito; o motivo está em [`COMP.md`](COMP.md).
 
-F-measure na amostra de 5000 tweets (P, R e F completos em `results/comparacao.md`; gráficos em `docs/resultados/`):
+F-measure na amostra de 5000 tweets (P, R e F completos em `results/comparacao.md`; gráficos em `resultados/`):
 
 | Limiar | Classe | Baseline original | Baseline corrigido | NeoSenticFuzzy |
 | :--- | :--- | ---: | ---: | ---: |

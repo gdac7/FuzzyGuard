@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 RESULTS = Path("results")
-OUT = Path("docs/resultados")
+OUT = Path("resultados")
 
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
