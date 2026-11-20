@@ -1,0 +1,11 @@
+,,Precision,Precision,Recall,Recall,F-measure,F-measure
+Model,,Baseline (2014),NeoSenticFuzzy,Baseline (2014),NeoSenticFuzzy,Baseline (2014),NeoSenticFuzzy
+Threshold,Polarity,,,,,,
+±0.1,Negative,0.86,0.836,0.277,0.52,0.419,0.641
+±0.1,Positive,0.797,0.786,0.582,0.687,0.673,0.733
+±0.2,Negative,0.968,0.881,0.169,0.333,0.288,0.484
+±0.2,Positive,0.897,0.835,0.335,0.582,0.488,0.686
+±0.4,Negative,1.0,0.933,0.068,0.158,0.127,0.271
+±0.4,Positive,0.917,0.923,0.06,0.264,0.113,0.41
+±0.6,Negative,1.0,1.0,0.023,0.028,0.044,0.055
+±0.6,Positive,0.8,1.0,0.022,0.027,0.043,0.053
