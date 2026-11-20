@@ -17,33 +17,37 @@ O projeto foi concebido seguindo boas práticas de engenharia de software (Padr�
    * **Análise Sintática:** Árvores de Dependência (*Dependency Parsing* via `spaCy`) no lugar de padrões fixos de etiquetas POS.
    * **Representação Semântica:** *Embeddings* densos contextuais (*Sentence-Transformers*) e similaridade cosseno no lugar de métricas baseadas em grafos do *WordNet*.
    * **Modelagem Nebulosa Refinada:** Modificadores linguísticos paramétricos (*Hedges* de Zadeh $x^\alpha$), complementos assimétricos de Sugeno e agregação via operadores **OWA** (*Ordered Weighted Averaging*) ou T-conormas paramétricas.
-3. **Avaliação Comparativa Justa:** Pipeline de benchmark agnóstico ao modelo, permitindo comparar lado a lado o baseline clássico e novas abordagens sob exatamente as mesmas métricas (*Precision*, *Recall* e *F-measure* por limiar $t$, replicando a Tabela 10 do artigo original).
+3. **Avaliação Comparativa Justa:** Pipeline de benchmark agnóstico ao modelo, permitindo comparar lado a lado o baseline clássico e novas abordagens sob exatamente as mesmas métricas (*Precision*, *Recall* e *F-measure* por limiar $t$, com o protocolo da Tabela 10 do artigo, aplicado sempre aos mesmos dados; ver `COMP.md`).
 
 ---
 
 ## 📁 Estrutura do Repositório
 
 ```text
-fuzzy_sentic_analysis/
-├── data/                                 # Datasets brutos (ex: Sentiment140 CSV)
-├── results/                              # Saídas de experimentos (CSVs de métricas, tabelas)
+NeoSenticFuzzy/
+├── data/                                 # Sentiment140 (não versionado)
+├── docs/                                 # Artigo base (não versionado)
+├── results/                              # Tabelas de métricas, contagens da Figura 2 e comparacao.md
 ├── src/
 │   └── fuzzy_sentic/
-│       ├── __init__.py
-│       ├── config.py                     # Constantes, dimensões da Hourglass e listas léxicas
+│       ├── config.py                     # Hourglass, léxicos e parâmetros do Neo
 │       ├── interfaces.py                 # Contrato abstrato (SenticPipelineInterface)
+│       ├── text_utils.py                 # Normalização de tweets compartilhada pelos modelos
+│       ├── conversation.py               # Classificação de uma conversa (usada pelo chat)
 │       ├── models/
-│       │   ├── __init__.py
 │       │   ├── baseline.py               # Implementação fiel de Loia & Senatore (2014)
-│       │   └── neosentic.py                 # Esqueleto da nossa abordagem
+│       │   └── neosentic.py              # NeoSenticFuzzy (nossa abordagem)
 │       └── evaluation/
-│           ├── __init__.py
-│           ├── data_loader.py            # Leitura e amostragem estratificada dos datasets
-│           └── metrics.py                # Cálculo de Precision, Recall, F1
-├── run_demo.py                           # Execução rápida e inspeção da matriz emocional (6x4)
-├── run_benchmark.py                      # Avaliação quantitativa comparativa em lote
-├── requirements.txt                      # Dependências do projeto
-└── README.md                             # Documentação do repositório
+│           ├── data_loader.py            # Amostra estratificada e conjunto de teste do Sentiment140
+│           ├── metrics.py                # Precision, Recall e F-measure por limiar (Tabela 10)
+│           └── emotions.py               # Contagem de emoções por nível sentic (Figura 2)
+├── tests/                                # Testes (inclui os valores publicados no artigo)
+├── run_demo.py                           # Exemplo do artigo nos dois modelos
+├── run_benchmark.py                      # Avaliação comparativa (Seção 6 do artigo)
+├── run_chat.py                           # Chat no terminal com classificação em tempo real
+├── run_plots.py                          # Gráficos de comparação em docs/resultados/
+├── COMP.md                               # Protocolo de comparação (mesmos dados)
+└── requirements.txt
 ```
 
 ---
@@ -53,8 +57,8 @@ fuzzy_sentic_analysis/
 ### 1. Clonar o repositório e criar o ambiente virtual
 
 ```bash
-git clone <url-do-seu-repositorio>
-cd fuzzy_sentic_analysis
+git clone git@github.com:gdac7/FuzzyGuard.git
+cd FuzzyGuard
 
 python -m venv .venv
 # Linux/macOS:
@@ -69,16 +73,19 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-*(Nota: Na primeira execução do baseline, os recursos necessários do `nltk` — `wordnet`, `sentiwordnet`, `punkt` e `averaged_perceptron_tagger` — serão baixados automaticamente.)*
+O `requirements.txt` instala o PyTorch em versão CPU e o modelo `en_core_web_sm` do spaCy. Na primeira execução, os recursos do `nltk` (`wordnet`, `sentiwordnet`, `punkt_tab`, tagger) e o modelo `all-MiniLM-L6-v2` do Sentence-Transformers são baixados automaticamente.
 
 ### 3. Preparar o Dataset para Benchmark (Opcional)
 
-Para executar a avaliação quantitativa da Seção 6.1 do artigo (Tabela 10):
-1. Baixe o dataset **Sentiment140** (`training.1600000.processed.noemoticon.csv`) no Kaggle ou repositório oficial.
-2. Coloque o arquivo CSV dentro da pasta `data/`:
-   ```text
-   data/training.1600000.processed.noemoticon.csv
-   ```
+Para executar a avaliação quantitativa da Seção 6.1 do artigo (Tabela 10), baixe o **Sentiment140** e extraia em `data/`:
+
+```bash
+mkdir -p data && cd data
+curl -LO https://cs.stanford.edu/people/alecmgo/trainingandtestdata.zip
+unzip trainingandtestdata.zip && rm trainingandtestdata.zip
+```
+
+São usados `training.1600000.processed.noemoticon.csv` (amostra de 5000 tweets) e `testdata.manual.2009.06.14.csv` (teste anotado manualmente).
 
 ---
 
@@ -91,22 +98,24 @@ Executa a análise de sentimento e extrai a matriz emocional completa ($6 \text{
 python run_demo.py
 ```
 
-**Exemplo de saída:**
+**Exemplo de saída** (frase do exemplo do artigo, Seções 5.1–5.4):
 ```text
 Modelo: LoiaSenatoreBaseline
-Texto analisado: 'He is happy to go home. However, the weather is not very good.'
-Polaridade Global (Eq. 5): 0.4525
+Texto analisado: 'He is happy to go home.'
+Polaridade Global: 0.2502
 
 Matriz Emocional Final (6 Níveis Sentic x 4 Dimensões):
-Nível    | Pleasantness | Attention  | Sensitivity | Aptitude  
+Nível    | Pleasantness | Attention  | Sensitivity | Aptitude
 --------------------------------------------------------------
-+3       | 0.750        | 0.000      | 0.000       | 0.800     
-+2       | 0.800        | 0.000      | 0.000       | 0.570     
-+1       | 0.000        | 0.000      | 0.000       | 0.570     
--1       | 0.000        | 0.000      | 0.750       | 0.000     
--2       | 0.000        | 0.000      | 0.000       | 0.000     
--3       | 0.000        | 0.850      | 0.000       | 0.000     
++3       | 0.889        | 0.000      | 0.000       | 0.706
++2       | 0.824        | 0.000      | 0.000       | 0.625
++1       | 0.556        | 0.000      | 0.000       | 0.625
+-1       | 0.000        | 0.000      | 0.778       | 0.000
+-2       | 0.000        | 0.000      | 0.000       | 0.000
+-3       | 0.000        | 0.750      | 0.000       | 0.000
 ```
+
+As emoções ativas são as mesmas da Tabela 8 do artigo (Ecstasy, Joy, Amazement, Apprehension, Admiration, Trust, Acceptance), mais Serenity. A diferença vem de `happy` ser ligado a `happiness.n.01` em vez de `happiness#n#2` (veja "Desvios do artigo").
 
 ### 2. Benchmark Quantitativo (`run_benchmark.py`)
 Avalia os modelos registrados sobre uma amostra do *Sentiment140* variando os limiares $t \in \{\pm 0.1, \pm 0.2, \pm 0.4, \pm 0.6\}$ e exporta os resultados para `results/`:
@@ -115,11 +124,57 @@ Avalia os modelos registrados sobre uma amostra do *Sentiment140* variando os li
 python run_benchmark.py
 ```
 
-### 3. Implementando e Integrando a Versão Modernizada
-Para adicionar sua nova abordagem:
-1. Implemente os métodos definidos em `src/fuzzy_sentic/models/modern.py` na classe `ModernFuzzySentic`.
-2. Certifique-se de que `analyze_text(text)` retorne a tupla `(total_polarity, text_emo_table)` no formato `(float, np.ndarray[6, 4])`.
-3. Descomente a importação e instanciação de `ModernFuzzySentic` nos scripts `run_demo.py` e `run_benchmark.py` para gerar automaticamente os comparativos.
+### 3. Chat em tempo real (`run_chat.py`)
+Conversa no terminal em que cada mensagem enviada alterna entre **Pessoa A** e **Pessoa B**. O painel da direita mostra, a cada mensagem, a classificação da conversa (positiva, negativa ou neutra, com limiar 0.1), a polaridade de cada pessoa e da última mensagem, e as emoções dominantes da Hourglass.
+
+```bash
+python run_chat.py                    # NeoSenticFuzzy
+python run_chat.py --modelo baseline  # Loia & Senatore (2014)
+```
+
+`Ctrl+L` limpa a conversa e `Ctrl+Q` sai.
+
+### 4. Testes
+
+```bash
+pytest
+```
+
+Os testes do baseline conferem os valores publicados no artigo: Eq. 1, Eqs. 2–4, Tabelas 3, 4, 6, 7 e 8, e os padrões da Tabela 5.
+
+---
+
+## 📊 Resultados
+
+Todos os modelos são avaliados **nos mesmos dados**: nossa amostra estratificada de 5000 tweets do Sentiment140 e o teste anotado manualmente (359 tweets), com as métricas da Seção 6.1 do artigo. A Tabela 10 do artigo **não** entra na comparação, porque usa outros tweets e outro gabarito; o motivo está em [`COMP.md`](COMP.md).
+
+F-measure na amostra de 5000 tweets (P, R e F completos em `results/comparacao.md`; gráficos em `docs/resultados/`):
+
+| Limiar | Classe | Baseline original | Baseline corrigido | NeoSenticFuzzy |
+| :--- | :--- | ---: | ---: | ---: |
+| ±0.1 | Positive | 0.433 | 0.452 | **0.579** |
+| ±0.1 | Negative | 0.315 | 0.341 | **0.481** |
+| ±0.2 | Positive | 0.276 | 0.303 | **0.452** |
+| ±0.2 | Negative | 0.158 | 0.182 | **0.357** |
+| ±0.4 | Positive | 0.089 | 0.107 | **0.259** |
+| ±0.4 | Negative | 0.047 | 0.041 | **0.144** |
+| ±0.6 | Positive | 0.047 | 0.060 | **0.071** |
+| ±0.6 | Negative | 0.013 | 0.014 | **0.043** |
+
+No teste manual, o F em ±0.1 vai de 0.673 / 0.419 (baseline corrigido) para 0.737 / 0.669 (Neo), em positivos / negativos.
+
+O método do artigo produz polaridades pequenas: a Eq. 1 faz média sobre todos os sentidos da palavra, e a média da frase inclui palavras quase neutras (*"He is happy to go home"* dá 0.25). Por isso poucos tweets passam de ±0.4. O NeoSenticFuzzy ataca exatamente esses pontos (sentido escolhido pelo contexto e agregação IOWA) e melhora o F em todos os limiares, com precisão parecida.
+
+**Figura 2.** No baseline, com corte 0.2 praticamente todos os tweets ativam todas as emoções: substantivos sem afinidade emocional mantêm a tabela crua (≈0.2), como `home` na Tabela 7. No Neo, a separação aparece: Joy em 523 tweets positivos contra 44 negativos, e Sadness em 74 contra 235 (`results/fig2_*.csv`).
+
+## ↔️ Desvios do artigo
+
+* **WordNet-Affect** (indisponível: o site da FBK está fora do ar): as categorias afetivas são os substantivos do WordNet 3.0 descendentes de `feeling.n.01`, ligados à palavra por derivação, atributo ou pertainym. Por isso `happy` vai para `happiness.n.01`, e não para `happiness#n#2`. Isso só afeta a matriz emocional, não a polaridade.
+* **Wu-Palmer**: a JWSL usada no artigo equivale à fórmula do NLTK com a profundidade deslocada em +2 (`wup_jwsl`), o que reproduz a Tabela 3 com erro médio de 0.006.
+* **Heurística dos opostos**: a regra que reproduz as Tabelas 4 e 7 é âncora = max(v, 1 − v), oposto = 1 − âncora, e palavras sem afinidade emocional (máximo < 0.5) mantêm a tabela crua.
+* **Polaridade de padrões** limitada a [−1, 1] (o artigo soma sem limitar).
+* **Eq. 4** aplicada literalmente: "not very happy" (0.883) fica mais positivo que "happy" (0.847).
+* **Normalização de tweets** (entidades HTML, URLs, @menções, #, emoticons) igual para os dois modelos.
 
 ---
 
@@ -128,11 +183,12 @@ Para adicionar sua nova abordagem:
 | Seção do Artigo (Loia & Senatore, 2014) | Descrição Conceitual | Módulo Correspondente |
 | :--- | :--- | :--- |
 | **Seção 4** | *Hourglass of Emotions* (4 dimensões $\times$ 6 níveis) e léxicos | `src/fuzzy_sentic/config.py` |
-| **Seção 5.1** | *POS Tagging*, lematização e substantivação no WordNet | `baseline.py` (`phase1_pos_tagging_and_filtering`) |
+| **Seção 5.1** | *POS Tagging*, lematização, desambiguação e substantivação no WordNet | `baseline.py` (`phase1_pos_tagging_and_filtering`, `assign_synsets`) |
 | **Seção 5.2** | Polaridade (Eq. 1) e Tabela de Similaridade Emocional | `baseline.py` (`compute_word_polarity`, `compute_emotional_similarity_table`) |
-| **Seção 5.3** | Padrões sintáticos (Tabela 5) e Modificadores Fuzzy (Eqs. 2–4) | `baseline.py` (`phase3_pattern_analysis`, `_fuzzy_*`) |
+| **Seção 5.3** | Padrões sintáticos (Tabela 5) e Modificadores Fuzzy (Eqs. 2–4) | `baseline.py` (`phase3_pattern_analysis`, `_pattern_unit`, `_fuzzy_*`) |
 | **Seções 5.4 & 5.5** | Agregação por frase ($\alpha$-cut) e texto completo (Eq. 5) | `baseline.py` (`phase4_phrase_analysis`, `analyze_text`) |
 | **Seção 6.1** | Avaliação de *Precision*, *Recall* e *F-measure* (Tabela 10) | `src/fuzzy_sentic/evaluation/metrics.py` |
+| **Seção 6.2** | Emoções por nível sentic nos tweets positivos e negativos (Figura 2) | `src/fuzzy_sentic/evaluation/emotions.py` |
 
 ---
 
