@@ -13,7 +13,7 @@ O projeto foi concebido seguindo boas práticas de engenharia de software (Padr�
 ## 🎯 Objetivos Científicos e Arquiteturais
 
 1. **Reprodutibilidade do Baseline (Loia & Senatore, 2014):** Reproduz fielmente o pipeline clássico baseado em *POS Tagging*, *WordNet*, *SentiWordNet*, similaridade semântica de *Wu & Palmer*, heurísticas de antônimos na *Hourglass of Emotions* e modificadores linguísticos nebulosos (intensificadores, negadores e combinadores).
-2. **Extensibilidade para Pesquisa (Modernização):** Fornece um contrato abstrato (`SenticPipelineInterface`) e um esqueleto estrutural (`NeoSenticFuzzy`) para substituir gargalos léxicos antigos por técnicas modernas leves:
+2. **Extensibilidade para Pesquisa (Modernização):** Fornece um contrato abstrato (`SenticPipelineInterface`) e a implementação `NeoSenticFuzzy`, que substitui gargalos léxicos antigos por técnicas modernas leves:
    * **Análise Sintática:** Árvores de Dependência (*Dependency Parsing* via `spaCy`) no lugar de padrões fixos de etiquetas POS.
    * **Representação Semântica:** *Embeddings* densos contextuais (*Sentence-Transformers*) e similaridade cosseno no lugar de métricas baseadas em grafos do *WordNet*.
    * **Modelagem Nebulosa Refinada:** Modificadores linguísticos paramétricos (*Hedges* de Zadeh $x^\alpha$), complementos assimétricos de Sugeno e agregação via operadores **OWA** (*Ordered Weighted Averaging*) ou T-conormas paramétricas.
@@ -28,6 +28,7 @@ NeoSenticFuzzy/
 ├── data/                                 # Sentiment140 (não versionado)
 ├── docs/                                 # Artigo base (não versionado)
 ├── results/                              # Tabelas de métricas, contagens da Figura 2 e comparacao.md
+├── resultados/                           # Gráficos de comparação (PNG)
 ├── src/
 │   └── fuzzy_sentic/
 │       ├── config.py                     # Hourglass, léxicos e parâmetros do Neo
@@ -47,6 +48,7 @@ NeoSenticFuzzy/
 ├── run_chat.py                           # Chat no terminal com classificação em tempo real
 ├── run_plots.py                          # Gráficos de comparação em resultados/
 ├── COMP.md                               # Protocolo de comparação (mesmos dados)
+├── pytest.ini
 └── requirements.txt
 ```
 
@@ -57,8 +59,8 @@ NeoSenticFuzzy/
 ### 1. Clonar o repositório e criar o ambiente virtual
 
 ```bash
-git clone git@github.com:gdac7/FuzzyGuard.git
-cd FuzzyGuard
+git clone git@github.com:gdac7/NeoSenticFuzzy.git
+cd NeoSenticFuzzy
 
 python -m venv .venv
 # Linux/macOS:
@@ -85,7 +87,7 @@ curl -LO https://cs.stanford.edu/people/alecmgo/trainingandtestdata.zip
 unzip trainingandtestdata.zip && rm trainingandtestdata.zip
 ```
 
-São usados `training.1600000.processed.noemoticon.csv` (amostra de 5000 tweets) e `testdata.manual.2009.06.14.csv` (teste anotado manualmente).
+São usados `training.1600000.processed.noemoticon.csv` (amostra de 5000 tweets) e `testdata.manual.2009.06.14.csv` (359 tweets positivos e negativos anotados manualmente pelos autores do Sentiment140; os neutros são descartados).
 
 ---
 
@@ -124,15 +126,21 @@ Avalia os modelos registrados sobre uma amostra do *Sentiment140* variando os li
 python run_benchmark.py
 ```
 
+Leva cerca de 3 minutos em CPU e gera as tabelas e o `results/comparacao.md`. Para refazer os gráficos de `resultados/` a partir desses resultados:
+
+```bash
+python run_plots.py
+```
+
 ### 3. Chat em tempo real (`run_chat.py`)
-Conversa no terminal em que cada mensagem enviada alterna entre **Pessoa A** e **Pessoa B**. O painel da direita mostra, a cada mensagem, a classificação da conversa (positiva, negativa ou neutra, com limiar 0.1), a polaridade de cada pessoa e da última mensagem, e as emoções dominantes da Hourglass.
+Conversa no terminal em que cada mensagem enviada alterna entre **Pessoa A** e **Pessoa B**. O painel da direita mostra, a cada mensagem, a classificação da conversa (positiva, negativa ou neutra, com limiar 0.1), a polaridade de cada pessoa e da última mensagem, as emoções dominantes da Hourglass e o tempo de processamento de cada atualização (útil para comparar os dois modelos rodando em terminais separados).
 
 ```bash
 python run_chat.py                    # NeoSenticFuzzy
 python run_chat.py --modelo baseline  # Loia & Senatore (2014)
 ```
 
-`Ctrl+L` limpa a conversa e `Ctrl+Q` sai.
+`Ctrl+L` limpa a conversa e `Ctrl+Q` sai. Os dois modelos só entendem **inglês** (SentiWordNet, WordNet, spaCy e MiniLM são recursos em inglês); frases em português dão resultados sem sentido.
 
 ### 4. Testes
 
@@ -143,6 +151,20 @@ pytest
 Os testes do baseline conferem os valores publicados no artigo: Eq. 1, Eqs. 2–4, Tabelas 3, 4, 6, 7 e 8, e os padrões da Tabela 5.
 
 ---
+
+## 🧠 NeoSenticFuzzy: o que muda em relação ao artigo
+
+| Etapa | Baseline (Loia & Senatore, 2014) | NeoSenticFuzzy |
+| :--- | :--- | :--- |
+| Estrutura da frase | Padrões fixos de POS entre palavras vizinhas (Tabela 5) | Árvore de dependências do spaCy (negação e intensificadores alcançam a palavra certa, mesmo à distância) |
+| Polaridade da palavra | Eq. 1: média do SentiWordNet sobre todos os sentidos | SentiWordNet com o peso de cada sentido ajustado pela semelhança entre a definição e a frase (Sentence-Transformers); gírias fora do dicionário recebem polaridade por proximidade com protótipos |
+| Emoções | Wu-Palmer no grafo do WordNet | Cosseno entre embeddings da palavra e dos 24 rótulos da Hourglass |
+| Intensificadores | Eq. 2, igual para todos | Hedges de Zadeh com força por palavra (*extremely* > *very* > *really*; *slightly* atenua) |
+| Negação | Eqs. 3 e 4 | Negação assimétrica de Sugeno ("not good" negativo, "not bad" levemente positivo) |
+| Agregação da polaridade | Média aritmética | IOWA induzida pela força da opinião |
+| União das emoções | Máximo | T-conorma de Yager |
+
+**IOWA** (*Induced Ordered Weighted Averaging*; Yager & Filev, 1999) ordena as polaridades pela força (|p|) e aplica pesos por posição, vindos do quantificador Q(r) = r^β (β = 0.5): a opinião mais forte pesa mais, sem ignorar as demais. Por exemplo, com as polaridades de *happy* (0.70), *home* (0.01) e *go* (0.004), a média dá 0.24 (o "happy" é diluído) e a IOWA dá 0.41. Com β = 1 ela vira a média comum. Os parâmetros do Neo ficam em `config.py` (`NEO_*`) e foram fixados a priori, sem ajuste nos dados de avaliação.
 
 ## 📊 Resultados
 
@@ -165,7 +187,7 @@ No teste manual, o F em ±0.1 vai de 0.673 / 0.419 (baseline corrigido) para 0.7
 
 O método do artigo produz polaridades pequenas: a Eq. 1 faz média sobre todos os sentidos da palavra, e a média da frase inclui palavras quase neutras (*"He is happy to go home"* dá 0.25). Por isso poucos tweets passam de ±0.4. O NeoSenticFuzzy ataca exatamente esses pontos (sentido escolhido pelo contexto e agregação IOWA) e melhora o F em todos os limiares, com precisão parecida.
 
-**Figura 2.** No baseline, com corte 0.2 praticamente todos os tweets ativam todas as emoções: substantivos sem afinidade emocional mantêm a tabela crua (≈0.2), como `home` na Tabela 7. No Neo, a separação aparece: Joy em 523 tweets positivos contra 44 negativos, e Sadness em 74 contra 235 (`results/fig2_*.csv`).
+**Figura 2.** No baseline, com corte 0.2 praticamente todos os tweets ativam todas as emoções: substantivos sem afinidade emocional mantêm a tabela crua (≈0.2), como `home` na Tabela 7, e palavras afetivas ficam acima de 0.5 em quase todos os rótulos. No Neo, as emoções aparecem em menos tweets, mas do lado certo: Joy em 523 tweets positivos contra 44 negativos, e Sadness em 74 contra 235 (`results/fig2_*.csv`). Como o Sentiment140 não tem rótulos de emoção, isso mostra coerência, não acerto. A explicação completa está em `results/comparacao.md`.
 
 ## ↔️ Desvios do artigo
 
@@ -196,4 +218,6 @@ O método do artigo produz polaridades pequenas: a Eq. 1 faz média sobre todos 
 
 * **Artigo Base:** Loia, V., & Senatore, S. (2014). *A fuzzy-oriented sentic analysis to capture the human emotion in Web-based content*. Knowledge-Based Systems, 58, 75–85.
 * **Modelo Emocional:** Cambria, E., Livingstone, A., & Hussain, A. (2012). *The Hourglass of Emotions*. In Cognitive Behavioural Systems (pp. 144–157). Springer.
+* **Dataset:** Go, A., Bhayani, R., & Huang, L. (2009). *Twitter Sentiment Classification using Distant Supervision*. CS224N Project Report, Stanford.
 * **Operadores de Agregação Nebulosos:** Yager, R. R. (1988). *On ordered weighted averaging aggregation operators in multicriteria decisionmaking*. IEEE Transactions on Systems, Man, and Cybernetics, 18(1), 183–190.
+* **IOWA:** Yager, R. R., & Filev, D. P. (1999). *Induced ordered weighted averaging operators*. IEEE Transactions on Systems, Man, and Cybernetics, Part B, 29(2), 141–150.
