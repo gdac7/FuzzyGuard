@@ -1,0 +1,9 @@
+Threshold,Polarity,Precision,Recall,F-measure
+±0.1,Positive,0.674,0.507,0.579
+±0.1,Negative,0.747,0.355,0.481
+±0.2,Positive,0.696,0.335,0.452
+±0.2,Negative,0.803,0.229,0.357
+±0.4,Positive,0.801,0.155,0.259
+±0.4,Negative,0.879,0.078,0.144
+±0.6,Positive,0.868,0.037,0.071
+±0.6,Negative,0.948,0.022,0.043

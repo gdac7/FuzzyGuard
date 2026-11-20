@@ -1,7 +1,7 @@
 from src.fuzzy_sentic.config import DIMENSIONS, SENTIMENT_LEVELS
 from src.fuzzy_sentic.interfaces import SenticPipelineInterface
 from src.fuzzy_sentic.models.baseline import LoiaSenatoreBaseline
-# from src.fuzzy_sentic.models.neosentic import NeoSenticFuzzy
+from src.fuzzy_sentic.models.neosentic import NeoSenticFuzzy
 
 
 def print_analysis(pipeline: SenticPipelineInterface, text: str) -> None:
@@ -9,7 +9,7 @@ def print_analysis(pipeline: SenticPipelineInterface, text: str) -> None:
 
     print(f"\nModelo: {pipeline.__class__.__name__}")
     print(f"Texto analisado: '{text}'")
-    print(f"Polaridade Global (Eq. 5): {polarity:.4f}\n")
+    print(f"Polaridade Global: {polarity:.4f}\n")
     print("Matriz Emocional Final (6 Níveis Sentic x 4 Dimensões):")
     print(f"{'Nível':<8} | {DIMENSIONS[0]:<12} | {DIMENSIONS[1]:<10} | {DIMENSIONS[2]:<11} | {DIMENSIONS[3]:<10}")
     print("-" * 62)
@@ -20,10 +20,12 @@ def print_analysis(pipeline: SenticPipelineInterface, text: str) -> None:
 
 
 if __name__ == "__main__":
-    sample_text = "He is happy to go home. However, the weather is not very good."
+    sample_texts = [
+        "He is happy to go home.",
+        "He is happy to go home. However, the weather is not very good.",
+    ]
 
-    baseline_model = LoiaSenatoreBaseline(alpha_cut=0.5)
-    print_analysis(baseline_model, sample_text)
-
-    # modern_model = NeoSenticFuzzy(alpha_cut=0.5)
-    # print_analysis(modern_model, sample_text)
+    models = [LoiaSenatoreBaseline(alpha_cut=0.5), NeoSenticFuzzy(alpha_cut=0.5)]
+    for text in sample_texts:
+        for model in models:
+            print_analysis(model, text)
