@@ -98,7 +98,7 @@ def figure_precision_recall(models: dict[str, pd.DataFrame], path: Path) -> None
 
 
 def figure_emotions(path: Path) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6), sharey=True)
     for ax, (name, file) in zip(axes, [
         ("Baseline corrigido", "fig2_LoiaSenatore_2014.csv"),
         ("NeoSenticFuzzy", "fig2_NeoSenticFuzzy.csv"),
