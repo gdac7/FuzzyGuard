@@ -1,6 +1,5 @@
 from typing import Dict, List, Set
 
-# Tabela 1 e Tabela 2: Dimensões afetivas e seus respectivos 6 níveis sentic (+3 a -3)
 HOURGLASS_SYNSETS: Dict[str, List[str]] = {
     "Pleasantness": [
         "ecstasy.n.01", "joy.n.01", "serenity.n.01",
@@ -23,11 +22,31 @@ HOURGLASS_SYNSETS: Dict[str, List[str]] = {
 DIMENSIONS: List[str] = list(HOURGLASS_SYNSETS.keys())
 SENTIMENT_LEVELS: List[str] = ["+3", "+2", "+1", "-1", "-2", "-3"]
 
-# Léxicos básicos de modificadores do baseline (Seção 5.3)
+SENTIC_LEVEL_NAMES: Dict[str, List[str]] = {
+    dim: [name.split(".")[0].capitalize() for name in synsets]
+    for dim, synsets in HOURGLASS_SYNSETS.items()
+}
+
+OPPOSITE_PAIRS = [(0, 5), (1, 4), (2, 3)]
+
+# Dimensões em que os opostos são antônimos efetivos e a âncora vem da polaridade
+POLARITY_ANCHORED_DIMENSIONS: Set[str] = {"Pleasantness", "Aptitude"}
+
 BASELINE_INTENSIFIERS: Set[str] = {
     "very", "extremely", "really", "too", "always", "simply", "so"
 }
 BASELINE_NEGATORS: Set[str] = {"not", "never", "no", "n't", "cannot"}
 
-# Limiares padrão utilizados na avaliação da Tabela 10 (Seção 6.1)
+# Sem o WordNet-Affect, cada emoticon vira o substantivo do WordNet que nomeia a emoção.
+EMOTICON_EMOTIONS: Dict[str, str] = {
+    ":)": "joy", ":-)": "joy", ":]": "joy", "=)": "joy", ":D": "joy", ":-D": "joy",
+    "=D": "joy", ";)": "joy", ";-)": "joy", "xD": "joy", "XD": "joy",
+    ":(": "sadness", ":-(": "sadness", ":[": "sadness", "=(": "sadness",
+    ":'(": "sadness", ":'-(": "sadness",
+    ">:(": "anger", ":@": "anger",
+    ":O": "surprise", ":-O": "surprise", ":o": "surprise",
+    "<3": "love",
+    "lol": "amusement",
+}
+
 EVALUATION_THRESHOLDS: List[float] = [0.1, 0.2, 0.4, 0.6]
